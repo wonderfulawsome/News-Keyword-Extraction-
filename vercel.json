@@ -1,6 +1,0 @@
-{
-    "rewrites": [
-      { "src": "/(.*)", "destination": "/" }
-    ]
-  }
-  
