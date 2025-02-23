@@ -1,8 +1,0 @@
-{
-    "rewrites": [
-      { "source": "/data", "destination": "/data" },
-      { "source": "/update", "destination": "/update" },
-      { "source": "/(.*)", "destination": "/" }
-    ]
-  }
-  
