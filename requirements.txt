@@ -6,4 +6,4 @@ feedparser
 requests
 numpy
 psycopg2-binary
-kr-wordrank
+krwordrank
