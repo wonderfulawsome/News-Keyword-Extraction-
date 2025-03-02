@@ -7,6 +7,13 @@ from collections import Counter
 import numpy as np
 from flask import Flask, jsonify
 from flask_cors import CORS  # CORS 추가
+import re
+
+# 전처리 함수: 대괄호 안 내용과 숫자 제거
+def preprocess(text):
+    text = re.sub(r'\[[^\]]*\]', '', text)  # 대괄호 안의 내용 제거
+    text = re.sub(r'\d+', '', text)          # 숫자 제거
+    return text.strip()
 
 app = Flask(__name__)
 CORS(app)  # 모든 도메인 허용
@@ -118,15 +125,25 @@ def kr_wordrank():
     # 제목 리스트 생성
     docs = news_df["제목"].tolist()
 
-    # KR-WordRank 모델 초기화 (데이터에 맞게 파라미터 조정)
+    # 제목 리스트 생성 후 전처리 적용
+    docs = [preprocess(doc) for doc in news_df["제목"].tolist()]
+
+    # KR-WordRank 모델 초기화
+    beta = 0.85
+    max_iter = 10
     wordrank_extractor = KRWordRank(
-        min_count=5,    # 최소 출현 빈도
-        max_length=10,  # 최대 단어 길이
-        verbose=True
-    )
+    min_count=5,
+    max_length=10,
+    verbose=True
+)
+
+    # 키워드 추출
+    keywords, word_scores, graph = wordrank_extractor.extract(docs, beta, max_iter)
+
+    # 후처리: 추출된 키워드 중 숫자나 대괄호 등 불필요한 패턴이 포함된 경우 필터링
+    keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
 
     # 키워드 추출: keywords는 딕셔너리 (키워드: 점수)
-    keywords, word_scores, graph = wordrank_extractor.extract(docs, beta, max_iter)
     print("추출된 키워드:", keywords)
     return jsonify(keywords)
 
