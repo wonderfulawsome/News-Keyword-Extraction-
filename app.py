@@ -9,9 +9,9 @@ from flask import Flask, jsonify
 from flask_cors import CORS  # CORS 추가
 import re
 
-# 전처리 함수: 대괄호 안 내용과 숫자 제거
+# 전처리 함수: 대괄호 안 내용과 숫자 제거 (필요 시 더 추가 가능)
 def preprocess(text):
-    text = re.sub(r'\[[^\]]*\]', '', text)  # 대괄호 안의 내용 제거
+    text = re.sub(r'\[[^\]]*\]', '', text)  # 대괄호 안 내용 제거
     text = re.sub(r'\d+', '', text)          # 숫자 제거
     return text.strip()
 
@@ -30,7 +30,7 @@ def get_db_connection():
 
 def update_database():
     """RSS 수집 → 기존 방식의 키워드 추출 → TOPSIS 계산 → DB 업데이트."""
-    # (이전 코드와 동일)
+    # (생략: 기존 update_database 코드)
     rss_list = [
         {"언론사": "mk뉴스", "rss_url": "https://www.mk.co.kr/rss/30000001/"},
         {"언론사": "한경", "rss_url": "https://www.hankyung.com/feed/economy"},
@@ -63,11 +63,9 @@ def update_database():
         all_news.extend(news_items)
     news_df = pd.DataFrame(all_news)
 
-    # (기존 KR-WordRank가 아닌 Gemini API를 사용한 방식)
-    # ...
-    # 이 함수는 TOPSIS 평가 결과를 DB에 업데이트하고, 그 결과(kw_df)를 반환합니다.
-    # (코드는 생략)
-    return pd.DataFrame()  # placeholder
+    # 여기서는 KR-WordRank 방식이 아닌 Gemini LLM 방식을 위한 기존 코드가 있을 수 있음.
+    # placeholder 반환:
+    return pd.DataFrame()
 
 @app.route('/update')
 def update():
@@ -81,7 +79,7 @@ def data():
     conn.close()
     return jsonify(df.to_dict(orient='records'))
 
-# 새로운 엔드포인트: KR-WordRank를 사용하여 키워드 추출
+# 새로운 엔드포인트: KR-WordRank를 사용하여 키워드 추출 및 관련 기사 링크 반환
 @app.route('/kr-wordrank')
 def kr_wordrank():
     from krwordrank.word import KRWordRank
@@ -89,7 +87,7 @@ def kr_wordrank():
     beta = 0.85
     max_iter = 10
 
-    # RSS 데이터 수집 (키워드 추출을 위한 뉴스 제목 모음)
+    # RSS 데이터 수집
     rss_list = [
         {"언론사": "mk뉴스", "rss_url": "https://www.mk.co.kr/rss/30000001/"},
         {"언론사": "한경", "rss_url": "https://www.hankyung.com/feed/economy"},
@@ -122,34 +120,31 @@ def kr_wordrank():
         all_news.extend(news_items)
     news_df = pd.DataFrame(all_news)
 
-    # 제목 리스트 생성
-    docs = news_df["제목"].tolist()
-
-    # 제목 리스트 생성 후 전처리 적용
+    # 제목 리스트 생성 및 전처리
     docs = [preprocess(doc) for doc in news_df["제목"].tolist()]
 
     # KR-WordRank 모델 초기화
-    beta = 0.85
-    max_iter = 10
-    wordrank_extractor = KRWordRank(
-    min_count=5,
-    max_length=10,
-    verbose=True
-)
-
-    # 키워드 추출
+    wordrank_extractor = KRWordRank(min_count=5, max_length=10, verbose=True)
     keywords, word_scores, graph = wordrank_extractor.extract(docs, beta, max_iter)
 
-    # 후처리: 추출된 키워드 중 숫자나 대괄호 등 불필요한 패턴이 포함된 경우 필터링
+    # 후처리: 숫자나 대괄호 포함 키워드 제거
     keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 키워드 추출: keywords는 딕셔너리 (키워드: 점수)
-    print("추출된 키워드:", keywords)
-    return jsonify(keywords)
+    # 각 키워드에 대해, 해당 키워드가 포함된 첫 번째 기사 링크 찾기
+    result = {}
+    for k, score in keywords.items():
+        matched = news_df[news_df["제목"].str.contains(k, na=False)]
+        if not matched.empty:
+            link = matched.iloc[0]["링크"]
+        else:
+            link = ""
+        result[k] = {"score": score, "link": link}
+
+    print("추출된 키워드:", result)
+    return jsonify(result)
 
 @app.route('/')
 def root():
-    # 루트 접근 시 간단한 안내문 반환 (HTML 서빙은 하지 않음)
     return "Flask API Server - No HTML served here. Use /data, /update, or /kr-wordrank."
 
 if __name__ == "__main__":
