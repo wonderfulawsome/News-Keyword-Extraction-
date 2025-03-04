@@ -1,8 +1,8 @@
 FROM python:3.9-slim
 
-# 시스템 업데이트 및 OpenJDK 11 설치
+# 시스템 업데이트 및 OpenJDK 11 (headless) 설치
 RUN apt-get update && \
-    apt-get install -y openjdk-11-jdk && \
+    apt-get install -y openjdk-11-jdk-headless && \
     apt-get clean
 
 # JAVA_HOME 환경변수 설정
