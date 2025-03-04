@@ -7,13 +7,47 @@ from collections import Counter
 import numpy as np
 from flask import Flask, jsonify
 from flask_cors import CORS  # CORS 추가
-import re
+import re, string
 
-# 전처리 함수: 대괄호 안 내용과 숫자 제거 (필요 시 더 추가 가능)
+# --- Konlpy 전처리 코드 추가 ---
+from konlpy.tag import Komoran, Hannanum
+
+komoran = Komoran()
+hannanum = Hannanum()
+
+with open('불용어.txt', 'r', encoding='utf-8') as f:
+    list_file = f.readlines()
+stopwords = list_file[0].split(",")
+
+# 정규화 함수
 def preprocess(text):
-    text = re.sub(r'\[[^\]]*\]', '', text)  # 대괄호 안 내용 제거
-    text = re.sub(r'\d+', '', text)          # 숫자 제거
-    return text.strip()
+    text = text.strip()
+    text = re.compile('<.*?>').sub('', text)
+    text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)
+    text = re.sub('\s+', ' ', text)
+    text = re.sub(r'\[[0-9]*\]', ' ', text)
+    text = re.sub(r'[^\w\s]', ' ', str(text).strip())
+    text = re.sub(r'\d', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+# 명사/영단어 추출, 한글자 제외, 불용어 제거
+def final(text):
+    n = []
+    word = komoran.nouns(text)
+    p = komoran.pos(text)
+    for pos in p:
+        if pos[1] in ['SL']:
+            word.append(pos[0])
+    for w in word:
+        if len(w) > 1 and w not in stopwords:
+            n.append(w)
+    return " ".join(n)
+
+# 최종 전처리 함수
+def finalpreprocess(text):
+    return final(preprocess(text))
+# --- 전처리 코드 끝 ---
 
 app = Flask(__name__)
 CORS(app)  # 모든 도메인 허용
@@ -30,7 +64,6 @@ def get_db_connection():
 
 def update_database():
     """RSS 수집 → 기존 방식의 키워드 추출 → TOPSIS 계산 → DB 업데이트."""
-    # (생략: 기존 update_database 코드)
     rss_list = [
         {"언론사": "mk뉴스", "rss_url": "https://www.mk.co.kr/rss/30000001/"},
         {"언론사": "한경", "rss_url": "https://www.hankyung.com/feed/economy"},
@@ -63,8 +96,7 @@ def update_database():
         all_news.extend(news_items)
     news_df = pd.DataFrame(all_news)
 
-    # 여기서는 KR-WordRank 방식이 아닌 Gemini LLM 방식을 위한 기존 코드가 있을 수 있음.
-    # placeholder 반환:
+    # 이 부분은 Gemini LLM을 위한 기존 코드로 placeholder 처리됨
     return pd.DataFrame()
 
 @app.route('/update')
@@ -79,15 +111,13 @@ def data():
     conn.close()
     return jsonify(df.to_dict(orient='records'))
 
-# 새로운 엔드포인트: KR-WordRank를 사용하여 키워드 추출 및 관련 기사 링크 반환
+# /kr-wordrank 엔드포인트: KR-WordRank로 키워드 추출 후, 해당 키워드와 관련 기사 링크 반환
 @app.route('/kr-wordrank')
 def kr_wordrank():
     from krwordrank.word import KRWordRank
-    # 파라미터 설정
     beta = 0.85
     max_iter = 10
 
-    # RSS 데이터 수집
     rss_list = [
         {"언론사": "mk뉴스", "rss_url": "https://www.mk.co.kr/rss/30000001/"},
         {"언론사": "한경", "rss_url": "https://www.hankyung.com/feed/economy"},
@@ -120,10 +150,9 @@ def kr_wordrank():
         all_news.extend(news_items)
     news_df = pd.DataFrame(all_news)
 
-    # 제목 리스트 생성 및 전처리
-    docs = [preprocess(doc) for doc in news_df["제목"].tolist()]
+    # 제목 리스트 생성 및 전처리 (최종 전처리 함수 사용)
+    docs = [finalpreprocess(doc) for doc in news_df["제목"].tolist()]
 
-    # KR-WordRank 모델 초기화
     wordrank_extractor = KRWordRank(min_count=5, max_length=10, verbose=True)
     keywords, word_scores, graph = wordrank_extractor.extract(docs, beta, max_iter)
 
