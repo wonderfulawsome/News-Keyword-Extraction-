@@ -103,7 +103,7 @@ def yake_endpoint():
     import yake
     language = "ko"
     max_ngram_size = 1
-    numOfKeywords = 20
+    numOfKeywords = 5
 
     news_df = load_news_csv()
     docs = news_df["제목"].tolist()
