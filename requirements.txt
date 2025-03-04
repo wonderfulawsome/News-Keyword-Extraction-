@@ -7,3 +7,4 @@ requests
 numpy
 psycopg2-binary
 krwordrank
+konlpy
