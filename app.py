@@ -55,7 +55,7 @@ def yake_endpoint():
     category = request.args.get("category", "전체")
     filename = f"{category}.csv"
     try:
-        news_df = pd.read_csv(filename)
+        news_df = pd.read_csv(filename, encoding='utf-8-sig')
     except Exception as e:
         return jsonify({"error": f"{filename} 파일을 읽을 수 없습니다.", "detail": str(e)})
 
@@ -67,7 +67,11 @@ def yake_endpoint():
     
     result = {}
     for kw, score in keywords_list:
-        matched = news_df[news_df["제목"].str.contains(kw, na=False)]
+        # re.escape()를 사용해 키워드 내 특수문자를 이스케이프 처리
+        try:
+            matched = news_df[news_df["제목"].str.contains(re.escape(kw), na=False)]
+        except Exception as ex:
+            matched = pd.DataFrame()  # 에러 발생 시 빈 DataFrame 처리
         if not matched.empty:
             link = matched.iloc[0]["링크"]
         else:
