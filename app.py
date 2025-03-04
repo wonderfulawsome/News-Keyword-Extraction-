@@ -44,19 +44,7 @@ def finalpreprocess(text):
 app = Flask(__name__)
 CORS(app)
 
-API_KEY = os.environ.get("GEMINI_API_KEY")
-
-# CSV 파일을 읽어오는 함수 (프로젝트 루트에 각 카테고리 CSV 파일이 있어야 함)
-def load_news_csv(category):
-    filename = f"{category}.csv"
-    try:
-        news_df = pd.read_csv(filename)
-        return news_df
-    except Exception as e:
-        print(f"CSV 파일 읽기 오류 ({filename}):", e)
-        return pd.DataFrame()
-
-# /yake 엔드포인트: 쿼리 파라미터 category에 따라 해당 CSV 파일에서 YAKE 키워드 추출
+# /yake 엔드포인트: 쿼리 파라미터 'category'에 따라 해당 CSV 파일에서 뉴스 데이터를 읽고 YAKE로 키워드 추출
 @app.route('/yake')
 def yake_endpoint():
     import yake
@@ -65,16 +53,18 @@ def yake_endpoint():
     numOfKeywords = 20  # 상위 20개 키워드 추출
 
     category = request.args.get("category", "전체")
-    news_df = load_news_csv(category)
-    if news_df.empty:
-        return jsonify({"error": f"{category}.csv 파일을 읽을 수 없습니다."})
+    filename = f"{category}.csv"
+    try:
+        news_df = pd.read_csv(filename)
+    except Exception as e:
+        return jsonify({"error": f"{filename} 파일을 읽을 수 없습니다.", "detail": str(e)})
 
     # 전체 뉴스 제목을 하나의 텍스트로 결합
     docs = news_df["제목"].tolist()
     combined_text = " ".join(docs)
     kw_extractor = yake.KeywordExtractor(lan=language, n=max_ngram_size, top=numOfKeywords, features=None)
     keywords_list = kw_extractor.extract_keywords(combined_text)
-
+    
     result = {}
     for kw, score in keywords_list:
         matched = news_df[news_df["제목"].str.contains(kw, na=False)]
@@ -89,7 +79,7 @@ def yake_endpoint():
 
 @app.route('/')
 def root():
-    return "Flask API Server - Use /yake?category=전체 (or 정치, 경제, 사회, 세계, 문화, 연예, 스포츠)."
+    return "Flask API Server - Use /yake?category=전체, 정치, 경제, 사회, 세계, 문화, 연예, 스포츠."
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
