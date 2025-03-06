@@ -213,7 +213,7 @@ def parse_rss(url):
 
 @app.route('/kowordrank')
 def kowordrank_endpoint():
-    """ KoWordRank로 카테고리별 키워드를 추출 """
+    """ KoWordRank로 카테고리별 키워드를 추출 (상위 20개) """
     from krwordrank.word import KRWordRank
 
     category = request.args.get("category", "전체")
@@ -247,14 +247,19 @@ def kowordrank_endpoint():
     # 숫자나 '[' 같은 특수문자 키워드는 제외
     keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
 
+    # (1) 키워드 점수 높은 순으로 정렬
+    sorted_by_score = sorted(keywords.items(), key=lambda x: x[1], reverse=True)
+    # (2) 상위 20개만
+    top_20 = sorted_by_score[:20]
+
     # 기사 링크 매핑
     result = {}
-    for k, score in keywords.items():
+    for k, score in top_20:
         matched_df = news_df[news_df["제목"].str.contains(k, na=False)]
         link = matched_df.iloc[0]["링크"] if not matched_df.empty else ""
         result[k] = {"score": score, "link": link}
 
-    print(f"[KoWordRank: {category}] 추출된 키워드:", result)
+    print(f"[KoWordRank: {category}] 상위 20 키워드:", result)
     return jsonify(result)
 # --------------------------------------------------------
 
