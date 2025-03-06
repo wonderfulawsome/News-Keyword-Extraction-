@@ -53,7 +53,7 @@ def finalpreprocess(text):
 app = Flask(__name__)
 CORS(app)
 
-# ----------------- DB 연결 및 갱신 로직 ------------------
+# ----------------- DB 연결 및 갱신 로직 (예시) ------------------
 def get_db_connection():
     """PostgreSQL DB 연결 (Render 등에서 DATABASE_URL 환경 변수를 사용)"""
     db_url = os.environ.get("DATABASE_URL")
@@ -63,10 +63,7 @@ def get_db_connection():
     return conn
 
 def update_database():
-    """
-    예시용: RSS 몇 개를 파싱 후, DB의 keyword_ranking 테이블을
-    생성/갱신하는 placeholder 함수.
-    """
+    """예시용: RSS 몇 개를 파싱 후, DB의 keyword_ranking 테이블을 생성/갱신하는 함수."""
     rss_list = [
         {"언론사": "mk뉴스", "rss_url": "https://www.mk.co.kr/rss/30000001/"},
         {"언론사": "한경", "rss_url": "https://www.hankyung.com/feed/economy"}
@@ -106,14 +103,13 @@ def update_database():
     """)
     conn.commit()
 
-    # 테이블 비우기
+    # 테이블 비우기 (예시)
     cur.execute("DELETE FROM keyword_ranking")
     conn.commit()
 
-    # 예시로 첫 번째 행의 제목을 넣어본다고 가정
+    # 예시로 첫 번째 행의 제목을 삽입
     if not news_df.empty:
         first_title = news_df.iloc[0]["제목"]
-        # placeholder freq=1, closeness=0.5
         cur.execute("""
             INSERT INTO keyword_ranking (keyword, frequency, closeness)
             VALUES (%s, %s, %s)
@@ -143,60 +139,28 @@ def data():
 # ----------------- KoWordRank RSS 분석 -------------------
 RSS_FEEDS = {
     "전체": [
-        "https://news.sbs.co.kr/news/headlineRssFeed.do?plink=RSSREADER",
-        "https://news.sbs.co.kr/news/TopicRssFeed.do?plink=RSSREADER",
-        "https://www.yna.co.kr/rss/news.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/issue",
-        "https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml"
+        "https://news.sbs.co.kr/news/headlineRssFeed.do?plink=RSSREADER"
     ],
     "정치": [
-        "https://www.yna.co.kr/rss/politics.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/section/10",
-        "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01&plink=RSSREADER",
-        "https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml",
-        "https://www.hankyung.com/feed/politics"
+        "https://www.yna.co.kr/rss/politics.xml"
     ],
     "경제": [
-        "https://www.yna.co.kr/rss/economy.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/section/20",
-        "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=02&plink=RSSREADER",
-        "https://www.chosun.com/arc/outboundfeeds/rss/category/economy/?outputType=xml",
-        "https://www.hankyung.com/feed/economy"
+        "https://www.yna.co.kr/rss/economy.xml"
     ],
     "사회": [
-        "https://www.yna.co.kr/rss/society.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/section/30",
-        "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=03&plink=RSSREADER",
-        "https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml",
-        "https://www.hankyung.com/feed/society"
+        "https://www.yna.co.kr/rss/society.xml"
     ],
     "세계": [
-        "https://www.yna.co.kr/rss/international.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/section/40",
-        "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=07&plink=RSSREADER",
-        "https://www.chosun.com/arc/outboundfeeds/rss/category/international/?outputType=xml",
-        "https://www.hankyung.com/feed/international"
+        "https://www.yna.co.kr/rss/international.xml"
     ],
     "문화": [
-        "https://www.yna.co.kr/rss/culture.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/section/50",
-        "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=08&plink=RSSREADER",
-        "https://www.chosun.com/arc/outboundfeeds/rss/category/culture-life/?outputType=xml",
-        "https://www.hankyung.com/feed/life"
+        "https://www.yna.co.kr/rss/culture.xml"
     ],
     "연예": [
-        "https://www.yna.co.kr/rss/entertainment.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/section/60",
-        "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=14&plink=RSSREADER",
-        "https://www.chosun.com/arc/outboundfeeds/rss/category/entertainments/?outputType=xml",
-        "https://www.hankyung.com/feed/entertainment"
+        "https://www.yna.co.kr/rss/entertainment.xml"
     ],
     "스포츠": [
-        "https://www.yna.co.kr/rss/sports.xml",
-        "https://news-ex.jtbc.co.kr/v1/get/rss/section/70",
-        "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=09&plink=RSSREADER",
-        "https://www.chosun.com/arc/outboundfeeds/rss/category/sports/?outputType=xml",
-        "https://www.hankyung.com/feed/sports"
+        "https://www.yna.co.kr/rss/sports.xml"
     ]
 }
 
@@ -213,14 +177,14 @@ def parse_rss(url):
 
 @app.route('/kowordrank')
 def kowordrank_endpoint():
-    """ KoWordRank로 카테고리별 키워드를 추출 (상위 20개) """
+    """ KoWordRank로 카테고리별 키워드 추출: min_count=1, max_length=5 """
     from krwordrank.word import KRWordRank
 
     category = request.args.get("category", "전체")
     if category not in RSS_FEEDS:
         return jsonify({"error": f"잘못된 카테고리: {category}"}), 400
 
-    # 카테고리에 속한 모든 RSS URL 파싱
+    # 카테고리의 RSS URL 파싱
     rss_urls = RSS_FEEDS[category]
     all_news = []
     for url in rss_urls:
@@ -236,33 +200,27 @@ def kowordrank_endpoint():
     if not docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-    # KoWordRank 파라미터 설정
+    # KoWordRank 파라미터 변경: min_count=1, max_length=5
     beta = 0.85
     max_iter = 10
-    wordrank_extractor = KRWordRank(min_count=5, max_length=10, verbose=True)
+    wordrank_extractor = KRWordRank(min_count=1, max_length=5, verbose=True)
 
     # 키워드 추출
     keywords, word_scores, graph = wordrank_extractor.extract(docs, beta, max_iter)
 
-    # 숫자나 '[' 같은 특수문자 키워드는 제외
+    # 숫자나 '[' 같은 특수문자 키워드는 제외 (필요 시)
     keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
-
-    # (1) 키워드 점수 높은 순으로 정렬
-    sorted_by_score = sorted(keywords.items(), key=lambda x: x[1], reverse=True)
-    # (2) 상위 20개만
-    top_20 = sorted_by_score[:20]
 
     # 기사 링크 매핑
     result = {}
-    for k, score in top_20:
+    for k, score in keywords.items():
         matched_df = news_df[news_df["제목"].str.contains(k, na=False)]
         link = matched_df.iloc[0]["링크"] if not matched_df.empty else ""
         result[k] = {"score": score, "link": link}
 
-    print(f"[KoWordRank: {category}] 상위 20 키워드:", result)
+    print(f"[KoWordRank: {category}] 추출된 키워드:", result)
     return jsonify(result)
 # --------------------------------------------------------
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
