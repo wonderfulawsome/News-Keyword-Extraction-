@@ -20,7 +20,7 @@ raw_stopwords = raw_text.split(',')
 stopwords = [w.strip() for w in raw_stopwords if w.strip()]
 
 # 추가로 꼭 불용어 처리하고 싶은 단어 추가
-extra_stopwords = ["종합", "포토", "영상"]
+extra_stopwords = ["종합", "포토", "영상", "게시판"]
 for word in extra_stopwords:
     if word not in stopwords:
         stopwords.append(word)
