@@ -144,7 +144,10 @@ def data():
 RSS_FEEDS = {
     "전체": [
         "https://news.sbs.co.kr/news/headlineRssFeed.do?plink=RSSREADER",
-        "https://news.sbs.co.kr/news/TopicRssFeed.do?plink=RSSREADER"
+        "https://news.sbs.co.kr/news/TopicRssFeed.do?plink=RSSREADER",
+        "https://www.yna.co.kr/rss/news.xml",
+        "https://news-ex.jtbc.co.kr/v1/get/rss/issue",
+        "https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml"
     ],
     "정치": [
         "https://www.yna.co.kr/rss/politics.xml",
