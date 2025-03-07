@@ -76,7 +76,7 @@ def get_gemini_summary(text):
     # 실제 Gemini API 엔드포인트 (Google Generative Language API Gemini 모델 예시)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
     payload = {
-        "prompt": f"Summarize this news article title in 2-3 words: {text}",
+        "prompt": f"Summarize this news article title in a few words: {text}",
         "maxOutputTokens": 10
     }
     headers = {"Content-Type": "application/json"}
