@@ -21,7 +21,7 @@ raw_stopwords = raw_text.split(',')
 stopwords = [w.strip() for w in raw_stopwords if w.strip()]
 
 # 추가로 반드시 제거할 불용어
-extra_stopwords = ["종합", "포토", "영상", "게시판"]
+extra_stopwords = ["종합", "포토", "영상", "게시판", "속보"]
 for word in extra_stopwords:
     if word not in stopwords:
         stopwords.append(word)
@@ -76,7 +76,7 @@ def get_gemini_summary(text):
     # 실제 Gemini API 엔드포인트 (Google Generative Language API Gemini 모델 예시)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
     payload = {
-        "prompt": f"Summarize this news article title in a few words: {text}",
+        "prompt": f"Summarize this news article title: {text}",
         "maxOutputTokens": 10
     }
     headers = {"Content-Type": "application/json"}
