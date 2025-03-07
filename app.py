@@ -76,7 +76,7 @@ def get_gemini_summary(text):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
     # 요청 payload는 API 문서에 따라 수정 필요. 여기서는 prompt를 보내고, maxOutputTokens를 10으로 지정합니다.
     payload = {
-        "prompt": f"Summarize this news article title in 2-3 words without punctuation: {text}",
+        "prompt": f"Generate a concise summary of the following news article title in 2-3 plain words. Use only letters and spaces—do not include any punctuation or special characters: {text}",
         "maxOutputTokens": 10
     }
     headers = {"Content-Type": "application/json"}
