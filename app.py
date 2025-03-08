@@ -61,14 +61,13 @@ def preprocess(text):
 
 # Gemini 전용 전처리 함수: HTML 태그, 구두점, 공백만 제거 (숫자는 그대로 유지)
 def preprocess_for_gemini(text):
-    text = text.strip()
     text = re.compile('<.*?>').sub('', text)
     text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)
     text = re.sub(r'\s+', ' ', text)
     return text
 
 # 키워드 추출 함수: Komoran 명사 추출 후 불용어 제거 진행 (KR-WordRank용)
-def extract_keywords(text):
+def extract_keywords(text): 
     words = komoran.nouns(text)
     words = [w for w in words if len(w) > 1 and w not in stopwords]
     return " ".join(words)
