@@ -82,7 +82,7 @@ def get_gemini_summary(text):
         return " ".join(text.split()[:2])
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
     payload = {
-        "prompt": f"Summarize this news article title in a short sentence: {text}",
+        "prompt": f"이 뉴스 기사 타이틀을 짧은 한 문장으로 요약해봐 : {text}",
         "maxOutputTokens": 10
     }
     headers = {"Content-Type": "application/json"}
