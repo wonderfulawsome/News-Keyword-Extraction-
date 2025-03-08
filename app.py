@@ -52,7 +52,6 @@ def parse_rss(url):
 
 # 전처리 함수 (HTML 태그, 구두점, 공백, 숫자 제거) – KR-WordRank용
 def preprocess(text):
-    text = text.strip()
     text = re.compile('<.*?>').sub('', text)  # HTML 태그 제거
     text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)  # 구두점 제거
     text = re.sub(r'\s+', ' ', text)  # 연속 공백 제거
