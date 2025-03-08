@@ -82,7 +82,7 @@ def get_gemini_summary(text):
         return " ".join(text.split()[:2])
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
     payload = {
-        "prompt": f"Summarize this news article title in 3 words : {text}",
+        "prompt": f"Summarize this news article title in a short sentence : {text}",
         "maxOutputTokens": 10
     }
     headers = {"Content-Type": "application/json"}
