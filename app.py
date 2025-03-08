@@ -50,7 +50,7 @@ def parse_rss(url):
         for entry in feed.entries
     ]
 
-# 텍스트 전처리 함수
+# 전처리 함수 (HTML 태그, 구두점, 공백, 숫자 제거) – KR-WordRank용
 def preprocess(text):
     text = text.strip()
     text = re.compile('<.*?>').sub('', text)  # HTML 태그 제거
@@ -59,22 +59,30 @@ def preprocess(text):
     text = re.sub(r'\d', ' ', text)     # 숫자 제거
     return text
 
+# Gemini 전용 전처리 함수: HTML 태그, 구두점, 공백만 제거 (숫자는 그대로 유지)
+def preprocess_for_gemini(text):
+    text = text.strip()
+    text = re.compile('<.*?>').sub('', text)
+    text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+# 키워드 추출 함수: Komoran 명사 추출 후 불용어 제거 진행 (KR-WordRank용)
 def extract_keywords(text):
     words = komoran.nouns(text)
     words = [w for w in words if len(w) > 1 and w not in stopwords]
     return " ".join(words)
 
+# KR-WordRank용 전처리 함수 (불용어 제거 포함)
 def preprocess_text(text):
     return extract_keywords(preprocess(text))
 
-# Gemini API를 호출해서 기사 제목을 요약하는 함수
+# Gemini API를 호출하여 기사 제목을 요약하는 함수
 def get_gemini_summary(text):
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
         return " ".join(text.split()[:2])
-    # 실제 Gemini API 엔드포인트 (Google Generative Language API)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
-    # 요청 payload는 API 문서에 따라 수정 필요. 여기서는 prompt를 보내고, maxOutputTokens를 10으로 지정합니다.
     payload = {
         "prompt": f"Summarize this news article title in 2-3 words: {text}",
         "maxOutputTokens": 10
@@ -91,7 +99,7 @@ def get_gemini_summary(text):
         print("Gemini API error:", e)
         return " ".join(text.split()[:2])
 
-# /kowordrank 엔드포인트: KR-WordRank를 적용한 후 Gemini API로 요약하여 상위 20개 결과 반환
+# /kowordrank 엔드포인트: KR-WordRank 적용 후 Gemini API 요약으로 상위 20개 결과 반환
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -107,17 +115,16 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
+    # KR-WordRank에는 숫자 제거 포함 전처리 진행
     docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
     docs = [d for d in docs if d.strip()]
     if not docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-    # KR-WordRank 설정: min_count=1, max_length=10, beta=0.85, max_iter=10
     wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    keywords, word_scores, graph = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
+    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
     keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 상위 20개만 선택
     sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
 
     result = {}
@@ -125,7 +132,9 @@ def kowordrank_endpoint():
         matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
         if not matched_df.empty:
             article_title = matched_df.iloc[0]["제목"]
-            gemini_summary = get_gemini_summary(article_title)
+            # Gemini에는 숫자 제거 없이 HTML, 구두점, 공백만 제거된 텍스트 전달
+            processed_title_for_gemini = preprocess_for_gemini(article_title)
+            gemini_summary = get_gemini_summary(processed_title_for_gemini)
             link = matched_df.iloc[0]["링크"]
             result[gemini_summary] = {"score": score, "link": link}
         else:
