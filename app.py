@@ -83,31 +83,60 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    # 전체 기사에 대해 전처리된 텍스트 리스트 생성
-    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
-    docs = [d for d in docs if d.strip()]
-    if not docs:
+    # 전체 문서에서 KRWordRank 적용하여 키워드 사전 생성
+    all_docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
+    all_docs = [d for d in all_docs if d.strip()]
+    if not all_docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-    # 전체 문서를 대상으로 KR‑WordRank 적용 (min_count=1, max_length=10)
     wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
-    # 숫자나 대괄호 포함 키워드 제거
+    keywords, word_scores, _ = wordrank_extractor.extract(all_docs, beta=0.85, max_iter=10)
     keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
-
-    # 각 기사별로 전처리된 텍스트에서 global score 기준 키워드 2개 선택
-    result = []
+    
+    # 각 기사별로 키워드 점수 계산
+    news_df['keyword_score'] = 0
     for idx, row in news_df.iterrows():
         title = row["제목"]
+        processed_title = preprocess_text(title)
+        score = 0
+        for keyword, keyword_score in keywords.items():
+            if keyword in processed_title:
+                score += keyword_score
+        news_df.at[idx, 'keyword_score'] = score
+    
+    # 키워드 점수 기준으로 상위 20개 기사 선택
+    top_20_news = news_df.sort_values('keyword_score', ascending=False).head(20)
+    
+    # 각 기사별로 키워드 추출
+    result = {}
+    for idx, row in top_20_news.iterrows():
+        title = row["제목"]
         link = row["링크"]
-        processed = preprocess_text(title)
-        words = processed.split()
-        # 해당 기사에서 global KR‑WordRank 결과에 포함된 단어 후보 선별
-        candidates = [(w, word_scores[w]) for w in words if w in word_scores]
-        # score 기준 내림차순 정렬 후 상위 2개 키워드 선택
-        candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
-        top_keywords = [w for w, score in candidates][:2]
-        result.append({"제목": title, "키워드": top_keywords, "링크": link})
+        processed_title = preprocess_text(title)
+        
+        # 해당 기사 제목에 포함된 키워드 찾기
+        article_keywords = []
+        for keyword in keywords:
+            if keyword in processed_title:
+                article_keywords.append((keyword, keywords[keyword]))
+        
+        # 점수 기준으로 정렬하고 상위 2개 선택
+        article_keywords = sorted(article_keywords, key=lambda x: x[1], reverse=True)[:2]
+        
+        # 만약 키워드가 2개 미만이면 전체 키워드 중에서 추가
+        if len(article_keywords) < 2:
+            remaining_keywords = [(k, v) for k, v in keywords.items() if k not in [kw[0] for kw in article_keywords]]
+            remaining_keywords = sorted(remaining_keywords, key=lambda x: x[1], reverse=True)
+            article_keywords.extend(remaining_keywords[:2-len(article_keywords)])
+        
+        # 결과에 추가
+        article_id = idx  # 기사 식별자로 인덱스 사용
+        result[article_id] = {
+            "title": title,
+            "link": link,
+            "keywords": [{"keyword": kw, "score": score} for kw, score in article_keywords]
+        }
+    
     return jsonify(result)
 
 if __name__ == "__main__":
