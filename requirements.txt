@@ -9,4 +9,4 @@ psycopg2-binary
 krwordrank==1.0.3
 konlpy==0.6.0
 JPype1==1.5.2
-yake==0.4.8
+keybert==0.8.0
