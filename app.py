@@ -3,10 +3,13 @@ import re
 import string
 import feedparser
 import pandas as pd
+import numpy as np
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from krwordrank.word import KRWordRank
 from konlpy.tag import Komoran
+import gensim
+from gensim import corpora
+from gensim.models import LdaModel
 
 app = Flask(__name__)
 CORS(app)
@@ -58,18 +61,20 @@ def preprocess(text):
     text = re.sub(r'\d', ' ', text)     # 숫자 제거
     return text
 
-def extract_keywords(text):
+def extract_nouns(text):
     words = komoran.nouns(text)
     words = [w for w in words if len(w) > 1 and w not in stopwords]
-    return " ".join(words)
+    return words
 
 def preprocess_text(text):
-    return extract_keywords(preprocess(text))
+    return extract_nouns(preprocess(text))
 
-# /kowordrank 엔드포인트: KR‑WordRank 적용 후 상위 20개 키워드 반환
-@app.route('/kowordrank')
-def kowordrank_endpoint():
+# LDA 모델을 사용하여 토픽 추출
+@app.route('/lda_topics')
+def lda_topics_endpoint():
     category = request.args.get("category", "전체")
+    num_topics = int(request.args.get("num_topics", 5))  # 기본 토픽 수
+    
     if category not in RSS_FEEDS:
         return jsonify({"error": f"잘못된 카테고리: {category}"}), 400
 
@@ -81,29 +86,69 @@ def kowordrank_endpoint():
     news_df = pd.DataFrame(all_news)
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
-
-    # 전처리된 뉴스 제목 리스트 생성
-    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
-    docs = [d for d in docs if d.strip()]
-    if not docs:
+    
+    # 최대 20개 기사만 선택
+    news_df = news_df.head(20)
+    
+    # 각 기사 제목에서 명사 추출
+    processed_docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
+    
+    # 빈 문서 제거
+    valid_indices = [i for i, doc in enumerate(processed_docs) if doc]
+    valid_docs = [processed_docs[i] for i in valid_indices]
+    valid_news = news_df.iloc[valid_indices].reset_index(drop=True)
+    
+    if not valid_docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
-
-    # KR‑WordRank 적용 (min_count=1, max_length=10)
-    wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
-    keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
-
-    # 상위 20개 선택 후 각 키워드와 관련된 첫 번째 기사 링크 포함
-    sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
-
-    result = {}
-    for keyword, score in sorted_keywords:
-        matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
-        if not matched_df.empty:
-            link = matched_df.iloc[0]["링크"]
-            result[keyword] = {"score": score, "link": link}
-        else:
-            result[keyword] = {"score": score, "link": ""}
+    
+    # 사전 생성
+    dictionary = corpora.Dictionary(valid_docs)
+    
+    # 문서-단어 행렬 생성
+    corpus = [dictionary.doc2bow(doc) for doc in valid_docs]
+    
+    # LDA 모델 학습
+    lda_model = LdaModel(
+        corpus=corpus,
+        id2word=dictionary,
+        num_topics=num_topics,
+        random_state=100,
+        update_every=1,
+        chunksize=10,
+        passes=10,
+        alpha='auto',
+        per_word_topics=True
+    )
+    
+    # 각 기사의 주요 토픽 추출
+    result = []
+    for i, (doc_bow, news) in enumerate(zip(corpus, valid_news.itertuples())):
+        # 문서의 토픽 분포 계산
+        doc_topics = lda_model.get_document_topics(doc_bow)
+        # 확률이 높은 순으로 정렬
+        doc_topics = sorted(doc_topics, key=lambda x: x[1], reverse=True)
+        
+        # 상위 2개 토픽 선택
+        top_topics = doc_topics[:2] if len(doc_topics) >= 2 else doc_topics
+        
+        # 각 토픽의 주요 키워드 추출
+        topic_keywords = []
+        for topic_id, prob in top_topics:
+            keywords = lda_model.show_topic(topic_id, topn=5)
+            topic_keywords.append({
+                "topic_id": int(topic_id),
+                "probability": float(prob),
+                "keywords": [{"word": word, "weight": float(weight)} for word, weight in keywords]
+            })
+        
+        # 결과에 추가
+        result.append({
+            "id": i,
+            "title": news.제목,
+            "link": news.링크,
+            "topics": topic_keywords
+        })
+    
     return jsonify(result)
 
 if __name__ == "__main__":
