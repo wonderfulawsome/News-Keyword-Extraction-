@@ -50,29 +50,26 @@ def parse_rss(url):
         for entry in feed.entries
     ]
 
-# 텍스트 전처리 함수
-def preprocess(text):
+# 공통 클리닝 함수: HTML 태그, 구두점, 공백, 숫자 제거 (YAKE용)
+def clean_text(text):
     text = text.strip()
-    text = re.compile('<.*?>').sub('', text)  # HTML 태그 제거
-    text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)  # 구두점 제거
-    text = re.sub(r'\s+', ' ', text)  # 연속 공백 제거
-    text = re.sub(r'\d', ' ', text)     # 숫자 제거
+    text = re.compile('<.*?>').sub('', text)
+    text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\d', ' ', text)
     return text
 
-# Komoran을 이용한 명사 추출 후 불용어 제거
-def extract_keywords(text):
-    words = komoran.nouns(text)
+# Komoran을 이용한 명사 추출 및 불용어 제거 (KR‑WordRank용)
+def preprocess_text(text):
+    cleaned = clean_text(text)
+    words = komoran.nouns(cleaned)
     words = [w for w in words if len(w) > 1 and w not in stopwords]
     return " ".join(words)
 
-def preprocess_text(text):
-    return extract_keywords(preprocess(text))
-
 # /kowordrank 엔드포인트: 
-# 1. 모든 기사 제목을 전처리하여 docs 리스트 생성
-# 2. KR‑WordRank로 전체 문서에서 키워드 점수 산출
-# 3. 각 기사별로 전처리된 텍스트에 포함된 토큰의 점수를 합산하여 기사 점수 산출
-# 4. 점수 내림차순 상위 20개 기사 선택 후, 각 기사에 대해 YAKE로 2개 키워드 추출
+# 1. 모든 기사 제목에 대해 preprocess_text를 이용해 전처리한 후, KR‑WordRank로 전역 단어 점수를 산출  
+# 2. 각 기사별로 전처리된 텍스트에 포함된 토큰의 점수를 합산하여 기사 점수를 계산  
+# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사에 대해 clean_text를 이용해 단순 클리닝한 텍스트를 대상으로 YAKE로 2개 키워드 추출
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -88,24 +85,23 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    # 전처리된 기사 제목 리스트 (docs)와 각 기사의 원문 저장
-    docs = []
-    for title in news_df["제목"].tolist():
-        proc = preprocess_text(title)
-        docs.append(proc)
-    
-    # KR‑WordRank 적용: 전체 문서에서 키워드와 점수 산출
+    # 각 기사에 대해 KR‑WordRank 전용 전처리 진행
+    proc_texts = [preprocess_text(title) for title in news_df["제목"].tolist()]
+    proc_texts = [doc for doc in proc_texts if doc.strip()]
+    if not proc_texts:
+        return jsonify({"error": "전처리 후 문서가 없습니다."})
+
+    # KR‑WordRank로 전체 문서에서 단어별 점수 산출
     wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    global_keywords, _, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
+    global_keywords, _, _ = wordrank_extractor.extract(proc_texts, beta=0.85, max_iter=10)
     # 불필요한 패턴 필터링
     global_keywords = {k: v for k, v in global_keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 각 기사별로 KR‑WordRank 점수(전처리된 텍스트에 포함된 토큰의 합산) 계산
+    # 각 기사별 점수: 전처리된 텍스트 내 각 토큰의 global_keywords 점수 합산
     article_scores = []
-    for doc in docs:
+    for doc in proc_texts:
         score = 0
-        tokens = doc.split()
-        for token in tokens:
+        for token in doc.split():
             if token in global_keywords:
                 score += global_keywords[token]
         article_scores.append(score)
@@ -114,19 +110,19 @@ def kowordrank_endpoint():
     # 점수 내림차순 정렬 후 상위 20개 기사 선택
     top20 = news_df.sort_values(by='score', ascending=False).head(20)
 
-    # YAKE 설정: 한국어, n-gram 최대 2, 상위 2개 키워드 추출
+    # YAKE 설정: 한국어, 최대 2-gram, 상위 2개 키워드 추출
     kw_extractor = yake.KeywordExtractor(lan="ko", n=2, top=2)
     result = []
     for _, row in top20.iterrows():
         title = row["제목"]
         link = row["링크"]
         score = row["score"]
-        # 각 기사에 대해 전처리된 텍스트 생성
-        proc_text = preprocess_text(title)
-        # YAKE 키워드 추출 (리스트: [(키워드, 점수), ...])
-        yake_keywords = kw_extractor.extract_keywords(proc_text)
-        # 키워드만 리스트로 추출 (필요시 점수도 포함 가능)
-        keywords = [kw for kw, _ in yake_keywords]
+        # YAKE용 텍스트: 단순 클리닝 (Komoran 추출하지 않은 원본 텍스트 기반)
+        cleaned_title = clean_text(title)
+        # YAKE로 키워드 추출 (리스트: [(키워드, 점수), ...])
+        yake_keywords = kw_extractor.extract_keywords(cleaned_title)
+        # 추출된 키워드가 없으면 빈 리스트, 있으면 키워드 문자열만 추출
+        keywords = [kw for kw, _ in yake_keywords] if yake_keywords else []
         result.append({
             "제목": title,
             "링크": link,
