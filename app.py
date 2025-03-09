@@ -3,7 +3,6 @@ import re
 import string
 import feedparser
 import pandas as pd
-import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from krwordrank.word import KRWordRank
@@ -67,31 +66,7 @@ def extract_keywords(text):
 def preprocess_text(text):
     return extract_keywords(preprocess(text))
 
-# Gemini API를 호출하여 전처리된 기사 제목을 2~3 단어로 요약하는 함수
-def get_gemini_summary(text):
-    gemini_api_key = os.environ.get("GEMINI_API_KEY")
-    # API 키가 없으면 기본적으로 제목의 앞 두 단어 사용
-    if not gemini_api_key:
-        return " ".join(text.split()[:2])
-    # 실제 Gemini API 엔드포인트 (Google Generative Language API Gemini 모델 예시)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
-    payload = {
-        "prompt": f"Summarize this news article title: {text}",
-        "maxOutputTokens": 10
-    }
-    headers = {"Content-Type": "application/json"}
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        if response.status_code == 200:
-            summary = response.json().get("summary")
-            return summary if summary else " ".join(text.split()[:2])
-        else:
-            return " ".join(text.split()[:2])
-    except Exception as e:
-        print("Gemini API error:", e)
-        return " ".join(text.split()[:2])
-
-# /kowordrank 엔드포인트: KR‑WordRank 적용 후 Gemini 요약으로 상위 20개 결과 반환
+# /kowordrank 엔드포인트: KR‑WordRank를 사용하여 상위 20개 키워드 반환
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -118,19 +93,15 @@ def kowordrank_endpoint():
     keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
     keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 상위 20개 선택
+    # 상위 20개 키워드 선택 및 결과 구성
     sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
-
     result = {}
     for keyword, score in sorted_keywords:
         matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
         if not matched_df.empty:
-            article_title = matched_df.iloc[0]["제목"]
-            # 전처리된 기사 제목을 Gemini API에 전달
-            processed_title = preprocess_text(article_title)
-            gemini_summary = get_gemini_summary(processed_title)
             link = matched_df.iloc[0]["링크"]
-            result[gemini_summary] = {"score": score, "link": link}
+            # kowordrank 로 추출된 키워드를 그대로 사용
+            result[keyword] = {"score": score, "link": link}
         else:
             result[keyword] = {"score": score, "link": ""}
     return jsonify(result)
