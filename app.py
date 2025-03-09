@@ -5,8 +5,8 @@ import feedparser
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from keybert import KeyBERT
 from konlpy.tag import Komoran
+import yake
 
 app = Flask(__name__)
 CORS(app)
@@ -58,7 +58,15 @@ def preprocess(text):
     text = re.sub(r'\d', ' ', text)     # 숫자 제거
     return text
 
-# /kowordrank 엔드포인트: KeyBERT를 사용하여 상위 20개 키워드 반환
+def extract_keywords(text):
+    words = komoran.nouns(text)
+    words = [w for w in words if len(w) > 1 and w not in stopwords]
+    return " ".join(words)
+
+def preprocess_text(text):
+    return extract_keywords(preprocess(text))
+
+# /kowordrank 엔드포인트: YAKE를 사용하여 상위 2개 키워드 반환
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -74,24 +82,21 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    # 전처리된 뉴스 제목 리스트 생성 (Komoran 등 추가 전처리 필요시 활용 가능)
-    docs = [preprocess(title) for title in news_df["제목"].tolist()]
+    # 전처리된 뉴스 제목 리스트 생성
+    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
     docs = [d for d in docs if d.strip()]
     if not docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-    # 전체 문서를 하나로 합쳐 KeyBERT에 입력 (뉴스 제목이 짧은 경우, 문서를 결합하면 추출 성능 향상 가능)
-    aggregated_text = " ".join(docs)
-    kw_model = KeyBERT()
-    keywords = kw_model.extract_keywords(
-        aggregated_text,
-        keyphrase_ngram_range=(1, 1),
-        stop_words=stopwords,
-        top_n=20
-    )
+    # 모든 전처리된 제목을 하나의 문자열로 합침
+    combined_text = " ".join(docs)
 
+    # YAKE 키워드 추출: 한국어("ko"), 최대 n-gram은 2, 상위 2개 키워드 추출
+    kw_extractor = yake.KeywordExtractor(lan="ko", n=2, top=2)
+    extracted = kw_extractor.extract_keywords(combined_text)  # [(키워드, 점수), ...]
+    
     result = {}
-    for keyword, score in keywords:
+    for keyword, score in extracted:
         matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
         if not matched_df.empty:
             link = matched_df.iloc[0]["링크"]
