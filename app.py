@@ -28,14 +28,7 @@ for word in extra_stopwords:
 
 # RSS 피드 URL 목록
 RSS_FEEDS = {
-    "전체": ["https://news-ex.jtbc.co.kr/v1/get/rss/issue"],
-    "정치": ["https://news-ex.jtbc.co.kr/v1/get/rss/section/10"],
-    "경제": ["https://news-ex.jtbc.co.kr/v1/get/rss/section/20"],
-    "사회": ["https://news-ex.jtbc.co.kr/v1/get/rss/section/30"],
-    "세계": ["https://news-ex.jtbc.co.kr/v1/get/rss/section/40"],
-    "문화": ["https://news-ex.jtbc.co.kr/v1/get/rss/section/50"],
-    "연예": ["https://news-ex.jtbc.co.kr/v1/get/rss/section/60"],
-    "스포츠": ["https://news-ex.jtbc.co.kr/v1/get/rss/section/70"]
+    "전체": ["https://news-ex.jtbc.co.kr/v1/get/rss/issue"]
 }
 
 # RSS 데이터 파싱 함수
