@@ -66,10 +66,10 @@ def preprocess_text(text):
     words = [w for w in words if len(w) > 1 and w not in stopwords]
     return " ".join(words)
 
-# /kowordrank 엔드포인트: 
-# 1. 모든 기사 제목에 대해 preprocess_text를 이용해 전처리한 후, KR‑WordRank로 전역 단어 점수를 산출  
-# 2. 각 기사별로 전처리된 텍스트에 포함된 토큰의 점수를 합산하여 기사 점수를 계산  
-# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사에 대해 clean_text를 이용해 단순 클리닝한 텍스트를 대상으로 YAKE로 2개 키워드 추출
+# /kowordrank 엔드포인트:
+# 1. 모든 기사 제목에 대해 preprocess_text를 이용해 전처리한 후, KR‑WordRank로 전역 단어 점수를 산출
+# 2. 각 기사별로 전처리된 텍스트에 포함된 토큰의 점수를 합산하여 기사 점수를 계산
+# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사에 대해 clean_text를 적용한 원본 텍스트에서 YAKE로 2개 키워드 추출
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -99,7 +99,7 @@ def kowordrank_endpoint():
 
     # 각 기사별 점수: 전처리된 텍스트 내 각 토큰의 global_keywords 점수 합산
     article_scores = []
-    for i, doc in enumerate(proc_texts):
+    for doc in proc_texts:
         score = 0
         for token in doc.split():
             if token in global_keywords:
@@ -117,30 +117,24 @@ def kowordrank_endpoint():
         title = row["제목"]
         link = row["링크"]
         score = row["score"]
-        
-        # YAKE용 텍스트: 단순 클리닝 (Komoran 추출하지 않은 원본 텍스트 기반)
+        # YAKE용 텍스트: 단순 클리닝 (원본 텍스트 기반)
         cleaned_title = clean_text(title)
-        
-        # YAKE로 키워드 추출 - 키워드만 저장 (점수는 버림)
         keywords = []
         try:
             yake_keywords = kw_extractor.extract_keywords(cleaned_title)
-            # YAKE는 점수가 낮을수록 더 관련성이 높은 키워드
-            # 키워드만 추출하고 점수는 버림
+            # YAKE는 (키워드, 점수) 형태로 반환한다고 가정
             keywords = [kw for kw, _ in yake_keywords]
         except Exception as e:
             print(f"YAKE 키워드 추출 오류: {e}")
             keywords = []
-            
         result.append({
             "제목": title,
             "링크": link,
-            "score": float(score),  # JSON 직렬화를 위해 float로 변환
+            "score": float(score),  # JSON 직렬화를 위해 float 변환
             "키워드": keywords
         })
 
     return jsonify(result)
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
