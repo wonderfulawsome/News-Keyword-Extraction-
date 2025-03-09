@@ -7,12 +7,14 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from konlpy.tag import Komoran
 from krwordrank.word import KRWordRank
-import yake
+from keybert import KeyBERT
 
 app = Flask(__name__)
 CORS(app)
 
 komoran = Komoran()
+# RoBERTa 기반 KeyBERT 모델 로드
+kw_model = KeyBERT(model="roberta-base")
 
 # 불용어 로드: 파일에서 쉼표로 구분된 단어 읽고 strip()
 with open('불용어.txt', 'r', encoding='utf-8') as f:
@@ -50,7 +52,7 @@ def parse_rss(url):
         for entry in feed.entries
     ]
 
-# 공통 클리닝 함수: HTML 태그, 구두점, 공백, 숫자 제거 (YAKE용)
+# 공통 클리닝 함수: HTML 태그, 구두점, 공백, 숫자 제거 (키워드 추출용)
 def clean_text(text):
     text = text.strip()
     text = re.compile('<.*?>').sub('', text)
@@ -66,10 +68,31 @@ def preprocess_text(text):
     words = [w for w in words if len(w) > 1 and w not in stopwords]
     return " ".join(words)
 
+# RoBERTa 기반 KeyBERT를 이용한 키워드 추출 함수
+def extract_keywords_roberta(text, top_n=2):
+    try:
+        # keyphrase_ngram_range=(1,2) 옵션으로 1~2그램 키워드를 추출
+        keywords = kw_model.extract_keywords(
+            text,
+            keyphrase_ngram_range=(1, 2),
+            stop_words=stopwords,
+            top_n=top_n
+        )
+        keywords = [kw for kw, score in keywords]
+        # 만약 추출된 키워드 개수가 top_n 미만이면 fallback으로 Komoran 명사 추출
+        if len(keywords) < top_n:
+            komoran_keywords = komoran.nouns(text)
+            komoran_keywords = [kw for kw in komoran_keywords if len(kw) > 1 and kw not in stopwords]
+            keywords = (keywords + komoran_keywords)[:top_n]
+        return keywords
+    except Exception as e:
+        print(f"RoBERTa 키워드 추출 오류: {e}")
+        return []
+
 # /kowordrank 엔드포인트:
-# 1. 모든 기사 제목에 대해 preprocess_text를 이용해 전처리한 후, KR‑WordRank로 전역 단어 점수를 산출
+# 1. 각 기사 제목에 대해 preprocess_text를 이용해 전처리한 후, KR‑WordRank로 전역 단어 점수를 산출
 # 2. 각 기사별로 전처리된 텍스트에 포함된 토큰의 점수를 합산하여 기사 점수를 계산
-# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사마다 YAKE로 2개 키워드 추출 (fallback 처리 포함)
+# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사마다 RoBERTa(KeyBERT)로 2개 키워드 추출
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -94,7 +117,6 @@ def kowordrank_endpoint():
     # KR‑WordRank로 전체 문서에서 단어별 점수 산출
     wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
     global_keywords, _, _ = wordrank_extractor.extract(proc_texts, beta=0.85, max_iter=10)
-    # 불필요한 패턴 필터링
     global_keywords = {k: v for k, v in global_keywords.items() if not re.search(r'\d|\[', k)}
 
     # 각 기사별 점수 계산: 전처리된 텍스트 내 토큰의 global_keywords 점수 합산
@@ -110,36 +132,18 @@ def kowordrank_endpoint():
     # 점수 내림차순 정렬 후 상위 20개 기사 선택
     top20 = news_df.sort_values(by='score', ascending=False).head(20)
 
-    # YAKE 설정: 한국어, 최대 2-gram, 상위 2개 키워드 추출
-    kw_extractor = yake.KeywordExtractor(lan="ko", n=2, top=2, dedupLim=0.9)
     result = []
     for _, row in top20.iterrows():
         title = row["제목"]
         link = row["링크"]
         score = row["score"]
-        # YAKE용 텍스트: 원본 텍스트를 클리닝하여 사용
+        # RoBERTa 기반 키워드 추출: 원본 텍스트를 클리닝한 후 사용
         cleaned_title = clean_text(title)
-        keywords = []
-        try:
-            yake_keywords = kw_extractor.extract_keywords(cleaned_title)
-            # 기본적으로 YAKE는 (키워드, 점수) 튜플을 반환
-            keywords = [kw for kw, _ in yake_keywords]
-            # 만약 추출된 키워드가 단 하나이고, 그것이 전체 텍스트와 동일하다면 fallback 처리
-            if len(keywords) == 1 and keywords[0] == cleaned_title:
-                fallback_keywords = list(dict.fromkeys(cleaned_title.split()))
-                keywords = fallback_keywords[:2]
-            # 만약 2개 미만이면 Komoran으로 fallback
-            if len(keywords) < 2:
-                komoran_keywords = komoran.nouns(cleaned_title)
-                komoran_keywords = [kw for kw in komoran_keywords if len(kw) > 1 and kw not in stopwords]
-                keywords = komoran_keywords[:2]
-        except Exception as e:
-            print(f"YAKE 키워드 추출 오류: {e}")
-            keywords = []
+        keywords = extract_keywords_roberta(cleaned_title, top_n=2)
         result.append({
             "제목": title,
             "링크": link,
-            "score": float(score),  # JSON 직렬화를 위해 float 변환
+            "score": float(score),
             "키워드": keywords
         })
 
