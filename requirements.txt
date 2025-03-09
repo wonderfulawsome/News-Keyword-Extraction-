@@ -9,5 +9,4 @@ psycopg2-binary
 krwordrank==1.0.3
 konlpy==0.6.0
 JPype1==1.5.2
-keybert
-sentence-transformers
+yake==0.4.8
