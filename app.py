@@ -5,7 +5,7 @@ import feedparser
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from krwordrank.word import KRWordRank
+from keybert import KeyBERT
 from konlpy.tag import Komoran
 
 app = Flask(__name__)
@@ -58,15 +58,7 @@ def preprocess(text):
     text = re.sub(r'\d', ' ', text)     # 숫자 제거
     return text
 
-def extract_keywords(text):
-    words = komoran.nouns(text)
-    words = [w for w in words if len(w) > 1 and w not in stopwords]
-    return " ".join(words)
-
-def preprocess_text(text):
-    return extract_keywords(preprocess(text))
-
-# /kowordrank 엔드포인트: KR‑WordRank를 사용하여 상위 20개 키워드 반환
+# /kowordrank 엔드포인트: KeyBERT를 사용하여 상위 20개 키워드 반환
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -82,25 +74,27 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    # 전처리된 뉴스 제목 리스트 생성
-    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
+    # 전처리된 뉴스 제목 리스트 생성 (Komoran 등 추가 전처리 필요시 활용 가능)
+    docs = [preprocess(title) for title in news_df["제목"].tolist()]
     docs = [d for d in docs if d.strip()]
     if not docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-    # KR‑WordRank 적용 (min_count=1, max_length=10)
-    wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
-    keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
+    # 전체 문서를 하나로 합쳐 KeyBERT에 입력 (뉴스 제목이 짧은 경우, 문서를 결합하면 추출 성능 향상 가능)
+    aggregated_text = " ".join(docs)
+    kw_model = KeyBERT()
+    keywords = kw_model.extract_keywords(
+        aggregated_text,
+        keyphrase_ngram_range=(1, 1),
+        stop_words=stopwords,
+        top_n=20
+    )
 
-    # 상위 20개 키워드 선택 및 결과 구성
-    sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
     result = {}
-    for keyword, score in sorted_keywords:
+    for keyword, score in keywords:
         matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
         if not matched_df.empty:
             link = matched_df.iloc[0]["링크"]
-            # kowordrank 로 추출된 키워드를 그대로 사용
             result[keyword] = {"score": score, "link": link}
         else:
             result[keyword] = {"score": score, "link": ""}
