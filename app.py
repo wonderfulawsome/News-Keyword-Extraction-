@@ -13,8 +13,8 @@ app = Flask(__name__)
 CORS(app)
 
 komoran = Komoran()
-# RoBERTa 기반 KeyBERT 모델 로드
-kw_model = KeyBERT(model="roberta-base")
+# KoMiniLM 모델을 사용하는 KeyBERT 모델 로드 (모델 이름은 Hugging Face에 등록된 KoMiniLM 모델로 설정)
+kw_model = KeyBERT(model="monologg/ko-minilm")
 
 # 불용어 로드: 파일에서 쉼표로 구분된 단어 읽고 strip()
 with open('불용어.txt', 'r', encoding='utf-8') as f:
@@ -68,10 +68,9 @@ def preprocess_text(text):
     words = [w for w in words if len(w) > 1 and w not in stopwords]
     return " ".join(words)
 
-# RoBERTa 기반 KeyBERT를 이용한 키워드 추출 함수
-def extract_keywords_roberta(text, top_n=2):
+# KoMiniLM 기반 KeyBERT를 이용한 키워드 추출 함수
+def extract_keywords_kominilm(text, top_n=2):
     try:
-        # keyphrase_ngram_range=(1,2) 옵션으로 1~2그램 키워드를 추출
         keywords = kw_model.extract_keywords(
             text,
             keyphrase_ngram_range=(1, 2),
@@ -79,20 +78,20 @@ def extract_keywords_roberta(text, top_n=2):
             top_n=top_n
         )
         keywords = [kw for kw, score in keywords]
-        # 만약 추출된 키워드 개수가 top_n 미만이면 fallback으로 Komoran 명사 추출
         if len(keywords) < top_n:
+            # fallback: Komoran 명사 추출
             komoran_keywords = komoran.nouns(text)
             komoran_keywords = [kw for kw in komoran_keywords if len(kw) > 1 and kw not in stopwords]
             keywords = (keywords + komoran_keywords)[:top_n]
         return keywords
     except Exception as e:
-        print(f"RoBERTa 키워드 추출 오류: {e}")
+        print(f"KoMiniLM 키워드 추출 오류: {e}")
         return []
 
 # /kowordrank 엔드포인트:
-# 1. 각 기사 제목에 대해 preprocess_text를 이용해 전처리한 후, KR‑WordRank로 전역 단어 점수를 산출
-# 2. 각 기사별로 전처리된 텍스트에 포함된 토큰의 점수를 합산하여 기사 점수를 계산
-# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사마다 RoBERTa(KeyBERT)로 2개 키워드 추출
+# 1. 모든 기사 제목에 대해 preprocess_text를 이용해 전처리 후 KR‑WordRank로 전역 단어 점수를 산출
+# 2. 각 기사별 전처리된 텍스트에 포함된 토큰의 점수 합산하여 기사 점수 계산
+# 3. 점수 내림차순 상위 20개 기사 선정 후, 각 기사마다 KoMiniLM(KeyBERT)로 2개 키워드 추출
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -119,7 +118,7 @@ def kowordrank_endpoint():
     global_keywords, _, _ = wordrank_extractor.extract(proc_texts, beta=0.85, max_iter=10)
     global_keywords = {k: v for k, v in global_keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 각 기사별 점수 계산: 전처리된 텍스트 내 토큰의 global_keywords 점수 합산
+    # 각 기사별 점수 계산: 전처리 텍스트 내 각 토큰의 global_keywords 점수 합산
     article_scores = []
     for doc in proc_texts:
         score = 0
@@ -137,9 +136,9 @@ def kowordrank_endpoint():
         title = row["제목"]
         link = row["링크"]
         score = row["score"]
-        # RoBERTa 기반 키워드 추출: 원본 텍스트를 클리닝한 후 사용
+        # KoMiniLM 기반 키워드 추출: 클리닝된 제목 사용
         cleaned_title = clean_text(title)
-        keywords = extract_keywords_roberta(cleaned_title, top_n=2)
+        keywords = extract_keywords_kominilm(cleaned_title, top_n=2)
         result.append({
             "제목": title,
             "링크": link,
