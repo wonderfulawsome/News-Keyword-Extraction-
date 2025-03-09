@@ -69,7 +69,7 @@ def preprocess_text(text):
 # /kowordrank 엔드포인트:
 # 1. 모든 기사 제목에 대해 preprocess_text를 이용해 전처리한 후, KR‑WordRank로 전역 단어 점수를 산출
 # 2. 각 기사별로 전처리된 텍스트에 포함된 토큰의 점수를 합산하여 기사 점수를 계산
-# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사에 대해 clean_text를 적용한 원본 텍스트에서 YAKE로 2개 키워드 추출
+# 3. 점수 내림차순 상위 20개 기사를 선정하고, 각 기사마다 YAKE로 2개 키워드 추출 (fallback 처리 포함)
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -97,7 +97,7 @@ def kowordrank_endpoint():
     # 불필요한 패턴 필터링
     global_keywords = {k: v for k, v in global_keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 각 기사별 점수: 전처리된 텍스트 내 각 토큰의 global_keywords 점수 합산
+    # 각 기사별 점수 계산: 전처리된 텍스트 내 토큰의 global_keywords 점수 합산
     article_scores = []
     for doc in proc_texts:
         score = 0
@@ -117,13 +117,22 @@ def kowordrank_endpoint():
         title = row["제목"]
         link = row["링크"]
         score = row["score"]
-        # YAKE용 텍스트: 단순 클리닝 (원본 텍스트 기반)
+        # YAKE용 텍스트: 원본 텍스트를 클리닝하여 사용
         cleaned_title = clean_text(title)
         keywords = []
         try:
             yake_keywords = kw_extractor.extract_keywords(cleaned_title)
-            # YAKE는 (키워드, 점수) 형태로 반환한다고 가정
+            # 기본적으로 YAKE는 (키워드, 점수) 튜플을 반환
             keywords = [kw for kw, _ in yake_keywords]
+            # 만약 추출된 키워드가 단 하나이고, 그것이 전체 텍스트와 동일하다면 fallback 처리
+            if len(keywords) == 1 and keywords[0] == cleaned_title:
+                fallback_keywords = list(dict.fromkeys(cleaned_title.split()))
+                keywords = fallback_keywords[:2]
+            # 만약 2개 미만이면 Komoran으로 fallback
+            if len(keywords) < 2:
+                komoran_keywords = komoran.nouns(cleaned_title)
+                komoran_keywords = [kw for kw in komoran_keywords if len(kw) > 1 and kw not in stopwords]
+                keywords = komoran_keywords[:2]
         except Exception as e:
             print(f"YAKE 키워드 추출 오류: {e}")
             keywords = []
