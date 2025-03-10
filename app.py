@@ -77,7 +77,7 @@ def kowordrank_endpoint():
     all_news = []
     for url in rss_urls:
         all_news.extend(parse_rss(url))
-    
+
     news_df = pd.DataFrame(all_news)
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
@@ -91,16 +91,15 @@ def kowordrank_endpoint():
         if not doc.strip():
             continue
 
-        # 단일 기사에 대해 KR‑WordRank 적용
+        # 단일 기사에 대해 KR‑WordRank 적용 (리스트에 단일 문서 포함)
         wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=False)
         keywords, word_scores, _ = wordrank_extractor.extract([doc], beta=0.85, max_iter=10)
         # 불필요한 키워드 제거
         keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
-        # 키워드를 점수 내림차순 정렬 후 상위 2개 선택
+        # 상위 2개 키워드 선택
         sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:2]
 
         if sorted_keywords:
-            # 기사별 aggregate 점수(상위 2개 키워드 점수 합산)
             aggregate_score = sum(score for _, score in sorted_keywords)
             article_results.append({
                 "제목": title,
@@ -108,11 +107,11 @@ def kowordrank_endpoint():
                 "키워드": [{"단어": k, "점수": v} for k, v in sorted_keywords],
                 "점수": aggregate_score
             })
-    
+
     # aggregate 점수가 높은 상위 20개 기사 선택
     article_results = sorted(article_results, key=lambda x: x["점수"], reverse=True)[:20]
-
     return jsonify(article_results)
+
 
 
 if __name__ == "__main__":
