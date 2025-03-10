@@ -82,35 +82,40 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    article_results = []
-    for idx, row in news_df.iterrows():
-        title = row["제목"]
-        link = row["링크"]
-        # 전처리된 텍스트 생성
-        doc = preprocess_text(title)
-        if not doc.strip():
-            continue
+    # 전체 뉴스 문서 전처리
+    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
+    docs = [d for d in docs if d.strip()]
+    if not docs:
+        return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-        # 단일 기사에 대해 KR‑WordRank 적용 (리스트에 단일 문서 포함)
-        wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=False)
-        keywords, word_scores, _ = wordrank_extractor.extract([doc], beta=0.85, max_iter=10)
-        # 불필요한 키워드 제거
-        keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
-        # 상위 2개 키워드 선택
-        sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:2]
+    # 전체 문서에 대해 KR‑WordRank 적용하여 글로벌 키워드와 점수 산출
+    wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
+    global_keywords, _, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
+    global_keywords = {k: v for k, v in global_keywords.items() if not re.search(r'\d|\[', k)}
 
-        if sorted_keywords:
-            aggregate_score = sum(score for _, score in sorted_keywords)
-            article_results.append({
-                "제목": title,
-                "링크": link,
-                "키워드": [{"단어": k, "점수": v} for k, v in sorted_keywords],
-                "점수": aggregate_score
-            })
+    # 글로벌 키워드 상위 20개 선택 및 해당 키워드 포함 첫 번째 기사 선택 (기존 방식)
+    sorted_global_keywords = sorted(global_keywords.items(), key=lambda x: x[1], reverse=True)[:20]
+    top_articles = []
+    for keyword, score in sorted_global_keywords:
+        matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
+        if not matched_df.empty:
+            article = {
+                "제목": matched_df.iloc[0]["제목"],
+                "링크": matched_df.iloc[0]["링크"],
+                "글로벌점수": score
+            }
+            top_articles.append(article)
 
-    # aggregate 점수가 높은 상위 20개 기사 선택
-    article_results = sorted(article_results, key=lambda x: x["점수"], reverse=True)[:20]
-    return jsonify(article_results)
+    # 선택된 상위 20개 기사 각각에 대해 개별 키워드 2개 추출
+    for article in top_articles:
+        doc = preprocess_text(article["제목"])
+        article_extractor = KRWordRank(min_count=1, max_length=10, verbose=False)
+        article_keywords, _, _ = article_extractor.extract([doc], beta=0.85, max_iter=10)
+        article_keywords = {k: v for k, v in article_keywords.items() if not re.search(r'\d|\[', k)}
+        sorted_article_keywords = sorted(article_keywords.items(), key=lambda x: x[1], reverse=True)[:2]
+        article["키워드"] = [{"단어": k, "점수": v} for k, v in sorted_article_keywords]
+
+    return jsonify(top_articles)
 
 
 
