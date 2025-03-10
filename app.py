@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from krwordrank.word import KRWordRank
 from konlpy.tag import Komoran
+import soykeyword  # soykeyword 라이브러리가 설치되어 있다고 가정
 
 app = Flask(__name__)
 CORS(app)
@@ -66,7 +67,12 @@ def extract_keywords(text):
 def preprocess_text(text):
     return extract_keywords(preprocess(text))
 
-# /kowordrank 엔드포인트: KR‑WordRank 적용 후 상위 20개 키워드 반환
+# soykeyword를 통한 키워드 추출 함수 (최대 3개)
+def extract_soykeywords(text, num_keywords=3):
+    # soykeyword.extract 함수가 text에서 상위 num_keywords개의 키워드를 반환한다고 가정
+    return soykeyword.extract(text, top_k=num_keywords)
+
+# /kowordrank 엔드포인트: KR‑WordRank 적용 후 상위 20개 기사에 대해 soykeyword로 키워드 2~3개 추출
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -82,42 +88,31 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    # 전체 뉴스 문서 전처리
+    # 전처리된 뉴스 제목 리스트 생성
     docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
     docs = [d for d in docs if d.strip()]
     if not docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-    # 전체 문서에 대해 KR‑WordRank 적용하여 글로벌 키워드와 점수 산출
+    # KR‑WordRank 적용 (min_count=1, max_length=10)
     wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    global_keywords, _, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
-    global_keywords = {k: v for k, v in global_keywords.items() if not re.search(r'\d|\[', k)}
+    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
+    keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 글로벌 키워드 상위 20개 선택 및 해당 키워드 포함 첫 번째 기사 선택 (기존 방식)
-    sorted_global_keywords = sorted(global_keywords.items(), key=lambda x: x[1], reverse=True)[:20]
-    top_articles = []
-    for keyword, score in sorted_global_keywords:
+    # 상위 20개 키워드 선택 후 해당 키워드를 포함하는 첫 번째 기사의 제목, 링크와 soykeyword 키워드 추출
+    sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
+
+    result = {}
+    for keyword, score in sorted_keywords:
         matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
         if not matched_df.empty:
-            article = {
-                "제목": matched_df.iloc[0]["제목"],
-                "링크": matched_df.iloc[0]["링크"],
-                "글로벌점수": score
-            }
-            top_articles.append(article)
-
-    # 선택된 상위 20개 기사 각각에 대해 개별 키워드 2개 추출
-    for article in top_articles:
-        doc = preprocess_text(article["제목"])
-        article_extractor = KRWordRank(min_count=1, max_length=10, verbose=False)
-        article_keywords, _, _ = article_extractor.extract([doc], beta=0.85, max_iter=10)
-        article_keywords = {k: v for k, v in article_keywords.items() if not re.search(r'\d|\[', k)}
-        sorted_article_keywords = sorted(article_keywords.items(), key=lambda x: x[1], reverse=True)[:2]
-        article["키워드"] = [{"단어": k, "점수": v} for k, v in sorted_article_keywords]
-
-    return jsonify(top_articles)
-
-
+            article_title = matched_df.iloc[0]["제목"]
+            link = matched_df.iloc[0]["링크"]
+            soy_keywords = extract_soykeywords(article_title, num_keywords=3)
+            result[keyword] = {"score": score, "link": link, "soykeywords": soy_keywords}
+        else:
+            result[keyword] = {"score": score, "link": "", "soykeywords": []}
+    return jsonify(result)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
