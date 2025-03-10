@@ -7,14 +7,15 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from krwordrank.word import KRWordRank
 from konlpy.tag import Komoran
-import soykeyword  # soykeyword 라이브러리가 설치되어 있다고 가정
+from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
 
 app = Flask(__name__)
 CORS(app)
 
 komoran = Komoran()
 
-# 불용어 로드: 파일에서 쉼표로 구분된 단어 읽고 strip()으로 공백 제거
+# 불용어 로드: 파일에서 쉼표로 구분된 단어 읽고 공백 제거
 with open('불용어.txt', 'r', encoding='utf-8') as f:
     raw_text = f.read()
 raw_stopwords = raw_text.split(',')
@@ -67,14 +68,9 @@ def extract_keywords(text):
 def preprocess_text(text):
     return extract_keywords(preprocess(text))
 
-# soykeyword를 통한 키워드 추출 함수 (최대 3개)
-def extract_soykeywords(text, num_keywords=3):
-    # soykeyword.extract 함수가 text에서 상위 num_keywords개의 키워드를 반환한다고 가정
-    return soykeyword.extract(text, top_k=num_keywords)
-
-# /kowordrank 엔드포인트: KR‑WordRank 적용 후 상위 20개 기사에 대해 soykeyword로 키워드 2~3개 추출
-@app.route('/kowordrank')
-def kowordrank_endpoint():
+# /tfidf_keywords 엔드포인트: KR‑WordRank로 상위 20개 기사 선택 후 각 기사에 대해 TF‑IDF로 2~3개 키워드 추출
+@app.route('/tfidf_keywords')
+def tfidf_keywords_endpoint():
     category = request.args.get("category", "전체")
     if category not in RSS_FEEDS:
         return jsonify({"error": f"잘못된 카테고리: {category}"}), 400
@@ -83,36 +79,62 @@ def kowordrank_endpoint():
     all_news = []
     for url in rss_urls:
         all_news.extend(parse_rss(url))
-
+    
     news_df = pd.DataFrame(all_news)
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    # 전처리된 뉴스 제목 리스트 생성
-    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
-    docs = [d for d in docs if d.strip()]
-    if not docs:
-        return jsonify({"error": "전처리 후 문서가 없습니다."})
+    # 각 뉴스 제목 전처리 및 유효 문서 선택
+    processed_docs = []
+    valid_indices = []
+    for i, title in enumerate(news_df["제목"].tolist()):
+        processed = preprocess_text(title)
+        if processed.strip():
+            processed_docs.append(processed)
+            valid_indices.append(i)
+    if not processed_docs:
+        return jsonify({"error": "전처리 후 문서가 없습니다."}), 400
+    news_df = news_df.iloc[valid_indices].reset_index(drop=True)
 
-    # KR‑WordRank 적용 (min_count=1, max_length=10)
+    # KR‑WordRank 적용: 전체 문서에 대해 단어 점수 계산
     wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
-    keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
+    _, word_scores, _ = wordrank_extractor.extract(processed_docs, beta=0.85, max_iter=10)
 
-    # 상위 20개 키워드 선택 후 해당 키워드를 포함하는 첫 번째 기사의 제목, 링크와 soykeyword 키워드 추출
-    sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
+    # 각 문서(기사)의 점수: 문서 내 단어들의 점수 합
+    doc_scores = []
+    for doc in processed_docs:
+        words = doc.split()
+        score = sum(word_scores.get(word, 0) for word in words)
+        doc_scores.append(score)
 
-    result = {}
-    for keyword, score in sorted_keywords:
-        matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
-        if not matched_df.empty:
-            article_title = matched_df.iloc[0]["제목"]
-            link = matched_df.iloc[0]["링크"]
-            soy_keywords = extract_soykeywords(article_title, num_keywords=3)
-            result[keyword] = {"score": score, "link": link, "soykeywords": soy_keywords}
-        else:
-            result[keyword] = {"score": score, "link": "", "soykeywords": []}
-    return jsonify(result)
+    # 상위 20개 기사 선택 (점수 기준 내림차순)
+    top_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)[:20]
+    top_docs = [processed_docs[i] for i in top_indices]
+    top_news = news_df.iloc[top_indices].reset_index(drop=True)
+
+    # TF‑IDF 적용: 선택된 20개 기사에 대해 TF‑IDF 계산
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix = tfidf_vectorizer.fit_transform(top_docs)
+    feature_names = tfidf_vectorizer.get_feature_names_out()
+
+    results = []
+    for idx, row in enumerate(tfidf_matrix):
+        row_array = row.toarray()[0]
+        # TF‑IDF 점수가 높은 단어 순으로 정렬
+        sorted_indices = np.argsort(row_array)[::-1]
+        keywords = []
+        for term_idx in sorted_indices:
+            if row_array[term_idx] > 0:
+                keywords.append(feature_names[term_idx])
+            if len(keywords) == 3:  # 최대 3개 키워드 추출
+                break
+        results.append({
+            "제목": top_news.iloc[idx]["제목"],
+            "링크": top_news.iloc[idx]["링크"],
+            "TFIDF 키워드": keywords
+        })
+
+    return jsonify(results)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
