@@ -13,7 +13,7 @@ CORS(app)
 
 komoran = Komoran()
 
-# 불용어 로드: 파일에서 쉼표로 구분된 단어 읽고 공백 제거
+# 불용어 로드: 파일에서 쉼표로 구분된 단어 읽고 strip()으로 공백 제거
 with open('불용어.txt', 'r', encoding='utf-8') as f:
     raw_text = f.read()
 raw_stopwords = raw_text.split(',')
@@ -55,7 +55,7 @@ def preprocess(text):
     text = re.compile('<.*?>').sub('', text)  # HTML 태그 제거
     text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)  # 구두점 제거
     text = re.sub(r'\s+', ' ', text)  # 연속 공백 제거
-    text = re.sub(r'\d', ' ', text)  # 숫자 제거
+    text = re.sub(r'\d', ' ', text)     # 숫자 제거
     return text
 
 def extract_keywords(text):
@@ -66,7 +66,7 @@ def extract_keywords(text):
 def preprocess_text(text):
     return extract_keywords(preprocess(text))
 
-# /kowordrank 엔드포인트: 상위 20개 기사 각각에서 KR‑WordRank로 키워드 2개 추출
+# /kowordrank 엔드포인트: KR‑WordRank 적용 후 상위 20개 키워드 반환
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -82,25 +82,28 @@ def kowordrank_endpoint():
     if news_df.empty or "제목" not in news_df.columns:
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
-    # 상위 20개 기사만 처리
-    news_df = news_df.head(20)
-    result = {}
+    # 전처리된 뉴스 제목 리스트 생성
+    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
+    docs = [d for d in docs if d.strip()]
+    if not docs:
+        return jsonify({"error": "전처리 후 문서가 없습니다."})
 
-    for idx, row in news_df.iterrows():
-        title = row["제목"]
-        link = row["링크"]
-        processed_text = preprocess_text(title)
-        if not processed_text.strip():
-            keywords = []
+    # KR‑WordRank 적용 (min_count=1, max_length=10)
+    wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
+    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
+    keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
+
+    # 상위 20개 선택 후 각 키워드와 관련된 첫 번째 기사 링크 포함
+    sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
+
+    result = {}
+    for keyword, score in sorted_keywords:
+        matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
+        if not matched_df.empty:
+            link = matched_df.iloc[0]["링크"]
+            result[keyword] = {"score": score, "link": link}
         else:
-            # 각 기사마다 KR‑WordRank 적용 (문서 하나짜리 리스트 전달)
-            wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=False)
-            kw_dict, _, _ = wordrank_extractor.extract([processed_text], beta=0.85, max_iter=10)
-            # 숫자나 대괄호가 포함된 단어 제거 후 상위 2개 선택
-            kw_filtered = {k: v for k, v in kw_dict.items() if not re.search(r'\d|\[', k)}
-            sorted_kw = sorted(kw_filtered.items(), key=lambda x: x[1], reverse=True)
-            keywords = [kw for kw, score in sorted_kw[:2]]
-        result[link] = {"제목": title, "키워드": keywords}
+            result[keyword] = {"score": score, "link": ""}
     return jsonify(result)
 
 if __name__ == "__main__":
