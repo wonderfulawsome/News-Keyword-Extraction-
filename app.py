@@ -66,7 +66,7 @@ def extract_keywords(text):
 def preprocess_text(text):
     return extract_keywords(preprocess(text))
 
-# /kowordrank 엔드포인트: 전체 기사 중 KR‑WordRank 점수로 상위 20개 기사 선정 및 각 기사별로 키워드 2개 추출
+# /kowordrank 엔드포인트: KR‑WordRank 적용 후 상위 20개 키워드 반환
 @app.route('/kowordrank')
 def kowordrank_endpoint():
     category = request.args.get("category", "전체")
@@ -86,43 +86,25 @@ def kowordrank_endpoint():
     docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
     docs = [d for d in docs if d.strip()]
     if not docs:
-        return jsonify({"error": "전처리 후 문서가 없습니다."}), 400
+        return jsonify({"error": "전처리 후 문서가 없습니다."})
 
     # KR‑WordRank 적용 (min_count=1, max_length=10)
     wordrank_extractor = KRWordRank(min_count=1, max_length=10, verbose=True)
-    # 전체 문서에 대해 단어 점수 산출 (키워드는 사용하지 않고 word_scores만 활용)
-    _, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
-    # 숫자나 '[' 포함 단어 제거
-    word_scores = {k: v for k, v in word_scores.items() if not re.search(r'\d|\[', k)}
+    keywords, word_scores, _ = wordrank_extractor.extract(docs, beta=0.85, max_iter=10)
+    keywords = {k: v for k, v in keywords.items() if not re.search(r'\d|\[', k)}
 
-    # 각 문서(기사)의 점수 계산: 문서 내 단어들의 전역 점수 합
-    doc_scores = []
-    for doc in docs:
-        words = doc.split()
-        score = sum(word_scores.get(word, 0) for word in words)
-        doc_scores.append(score)
+    # 상위 20개 선택 후 각 키워드와 관련된 첫 번째 기사 링크 포함
+    sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:20]
 
-    # KR‑WordRank 점수를 기준으로 상위 20개 기사 선택
-    top_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)[:20]
-    top_news = news_df.iloc[top_indices].reset_index(drop=True)
-    top_docs = [docs[i] for i in top_indices]
-
-    # 각 기사에서 단어들의 전역 점수를 참고하여 상위 2개 키워드 추출
-    results = []
-    for i, doc in enumerate(top_docs):
-        words = doc.split()
-        # 중복 제거(순서 유지)
-        unique_words = list(dict.fromkeys(words))
-        # 전역 word_scores에 따른 내림차순 정렬
-        sorted_words = sorted(unique_words, key=lambda w: word_scores.get(w, 0), reverse=True)
-        top_keywords = sorted_words[:2]
-        results.append({
-            "제목": top_news.iloc[i]["제목"],
-            "링크": top_news.iloc[i]["링크"],
-            "KRWordRank 키워드": top_keywords
-        })
-
-    return jsonify(results)
+    result = {}
+    for keyword, score in sorted_keywords:
+        matched_df = news_df[news_df["제목"].str.contains(keyword, na=False)]
+        if not matched_df.empty:
+            link = matched_df.iloc[0]["링크"]
+            result[keyword] = {"score": score, "link": link}
+        else:
+            result[keyword] = {"score": score, "link": ""}
+    return jsonify(result)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
