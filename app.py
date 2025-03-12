@@ -28,7 +28,7 @@ for word in extra_stopwords:
 
 # RSS 피드 URL 목록
 RSS_FEEDS = {
-    "전체": ["https://news.sbs.co.kr/news/headlineRssFeed.do?plink=RSSREADER"],
+    "전체": ["https://www.yna.co.kr/rss/news.xml"],
     "정치": ["https://www.yna.co.kr/rss/politics.xml"],
     "경제": ["https://www.yna.co.kr/rss/economy.xml"],
     "사회": ["https://www.yna.co.kr/rss/society.xml"],
