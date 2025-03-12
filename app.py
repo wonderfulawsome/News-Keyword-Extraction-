@@ -28,14 +28,14 @@ for word in extra_stopwords:
 
 # RSS 피드 URL 목록
 RSS_FEEDS = {
-    "전체": ["https://www.yna.co.kr/rss/news.xml"],
-    "정치": ["https://www.yna.co.kr/rss/politics.xml"],
-    "경제": ["https://www.yna.co.kr/rss/economy.xml"],
-    "사회": ["https://www.yna.co.kr/rss/society.xml"],
-    "세계": ["https://www.yna.co.kr/rss/international.xml"],
-    "문화": ["https://www.yna.co.kr/rss/culture.xml"],
-    "연예": ["https://www.yna.co.kr/rss/entertainment.xml"],
-    "스포츠": ["https://www.yna.co.kr/rss/sports.xml"]
+    "전체": ["https://www.hankyung.com/feed/all-news"],
+    "정치": ["https://www.hankyung.com/feed/politics"],
+    "경제": ["https://www.hankyung.com/feed/economy"],
+    "사회": ["https://www.hankyung.com/feed/society"],
+    "세계": ["https://www.hankyung.com/feed/international"],
+    "문화": ["https://www.hankyung.com/feed/life"],
+    "연예": ["https://www.hankyung.com/feed/entertainment"],
+    "스포츠": ["https://www.hankyung.com/feed/sports"]
 }
 
 # RSS 데이터 파싱 함수
