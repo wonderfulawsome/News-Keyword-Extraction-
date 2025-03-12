@@ -82,22 +82,49 @@ def get_gemini_summary(text):
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
         return " ".join(text.split()[:2])
+    
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent?key={gemini_api_key}"
+    
+    # 프롬프트 개선
     payload = {
-        "prompt": f"각각의 기사 타이틀에 대해서 문맥을 고려하여, 2-3단어로 요약해봐. 이외에는 어떠한 말도 하지마. : {text}",
-        "maxOutputTokens": 10
+        "contents": [{
+            "parts": [{
+                "text": f"""다음 기사 제목을 정확히 2-3개 단어로만 요약하세요. 
+                요약은 원문의 핵심 내용을 포함해야 합니다.
+                추가 설명이나 문장은 포함하지 마세요.
+                오직 2-3개 단어로만 구성된 요약만 출력하세요.
+                
+                기사 제목: {text}"""
+            }]
+        }],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 10,
+            "topP": 0.8
+        }
     }
+    
     headers = {"Content-Type": "application/json"}
+    
     try:
         response = requests.post(url, json=payload, headers=headers)
         if response.status_code == 200:
-            summary = response.json().get("summary")
-            return summary if summary else " ".join(text.split()[:2])
+            # 응답 처리 부분 수정
+            response_data = response.json()
+            if 'candidates' in response_data and len(response_data['candidates']) > 0:
+                candidate = response_data['candidates'][0]
+                if 'content' in candidate and 'parts' in candidate['content'] and len(candidate['content']['parts']) > 0:
+                    summary = candidate['content']['parts'][0]['text'].strip()
+                    return summary
+            # 응답 형식이 예상과 다를 경우 기본값 반환
+            return " ".join(text.split()[:2])
         else:
+            print(f"API 오류: {response.status_code}, {response.text}")
             return " ".join(text.split()[:2])
     except Exception as e:
-        print("Gemini API error:", e)
+        print("Gemini API 오류:", e)
         return " ".join(text.split()[:2])
+
 
 # /kowordrank 엔드포인트: KR-WordRank 적용 후 Gemini API 요약으로 상위 20개 결과 반환
 @app.route('/kowordrank')
