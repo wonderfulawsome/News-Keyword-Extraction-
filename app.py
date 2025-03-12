@@ -82,7 +82,7 @@ def get_gemini_summary(text):
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
         return " ".join(text.split()[:2])
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent?key={gemini_api_key}"
     payload = {
         "prompt": f"각각의 기사 타이틀에 대해서 문맥을 고려하여, 2-3단어로 요약해봐. 이외에는 어떠한 말도 하지마. : {text}",
         "maxOutputTokens": 10
