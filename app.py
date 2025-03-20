@@ -14,17 +14,43 @@ CORS(app)
 
 komoran = Komoran()
 
-# 불용어 로드: 파일에서 쉼표로 구분된 단어들을 읽고 strip()으로 공백 제거
-with open('불용어.txt', 'r', encoding='utf-8') as f:
-    raw_text = f.read()
-raw_stopwords = raw_text.split(',')
-stopwords = [w.strip() for w in raw_stopwords if w.strip()]
+with open('불용어.txt', 'r', encoding = 'UTF-8') as f:
+  list_file = f.readlines() 
+stopwords = list_file[0].split(",")
+stopwords.append('종합')
+stopwords.append('포토')
+stopwords.append('영상')
+stopwords.append('게시판')
 
-# 추가 불용어 (파일에 없더라도 강제로 추가)
-extra_stopwords = ["종합", "포토", "영상", "게시판"]
-for word in extra_stopwords:
-    if word not in stopwords:
-        stopwords.append(word)
+# 정규화
+def preprocess(text):
+    text=text.strip()  
+    text=re.compile('<.*?>').sub('', text) 
+    text = re.compile('[%s]' % re.escape(string.punctuation)).sub(' ', text)  
+    text = re.sub('\s+', ' ', text)  
+    text = re.sub(r'\[[0-9]*\]',' ',text) 
+    text=re.sub(r'[^\w\s]', ' ', str(text).strip())
+    text = re.sub(r'\d',' ',text) 
+    text = re.sub(r'\s+',' ',text) 
+    return text
+
+
+# 명사/영단어 추출, 한글자 제외, 불용어 제거
+def remove_stopwords(text):
+    n = []
+    word = komoran.nouns(text)
+    p = komoran.pos(text)
+    for pos in p:
+      if pos[1] in ['SL']:
+        word.append(pos[0])
+    for w in word:
+      if len(w)>1 and w not in stopwords:
+        n.append(w)
+    return " ".join(n)
+
+# 최종 전처리
+def finalpreprocess(text):
+  return remove_stopwords(preprocess(text))
 
 # RSS 피드 URL 목록
 RSS_FEEDS = {
@@ -143,7 +169,7 @@ def kowordrank_endpoint():
         return jsonify({"error": "RSS에서 제목을 가져오지 못했습니다."}), 400
 
     # KR-WordRank에는 숫자 제거 포함 전처리 진행
-    docs = [preprocess_text(title) for title in news_df["제목"].tolist()]
+    docs = [finalpreprocess(title) for title in news_df["제목"].tolist()]
     docs = [d for d in docs if d.strip()]
     if not docs:
         return jsonify({"error": "전처리 후 문서가 없습니다."})
@@ -160,7 +186,7 @@ def kowordrank_endpoint():
         if not matched_df.empty:
             article_title = matched_df.iloc[0]["제목"]
             # Gemini에는 숫자 제거 없이 HTML, 구두점, 공백만 제거된 텍스트 전달
-            processed_title_for_gemini = preprocess_for_gemini(article_title)
+            processed_title_for_gemini = finalpreprocess(article_title)
             gemini_summary = get_gemini_summary(processed_title_for_gemini)
             link = matched_df.iloc[0]["링크"]
             result[gemini_summary] = {"score": score, "link": link}
