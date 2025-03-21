@@ -21,6 +21,8 @@ stopwords.append('종합')
 stopwords.append('포토')
 stopwords.append('영상')
 stopwords.append('게시판')
+stopwords.append('책마을')
+stopwords.append('속보')
 
 # 정규화
 def preprocess(text):
